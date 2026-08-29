@@ -1,36 +1,47 @@
 import asyncio
 import json
 import os
+import subprocess
+import sys
+
+# 0. Auto-installation de sécurité si les dépendances manquent dans l'environnement Streamlit
+try:
+    from mistralai import Mistral
+except ImportError:
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "mistralai", "mcp"]
+    )
+    from mistralai import Mistral
+
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from mistralai import Mistral
 import streamlit as st
 
 # 1. Configuration de l'interface Streamlit
 st.set_page_config(page_title="Flight & Weather Assistant", page_icon="✈️")
 st.title("✈️ Assistant Vol & Météo")
 
-# 2. Récupération de la clé API Mistral
+# 2. Récupération de la clé API Mistral (Secrets ou Sidebar)
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 if not MISTRAL_API_KEY:
     MISTRAL_API_KEY = st.sidebar.text_input(
         "Clé API Mistral", type="password", help="Saisis ta clé console.mistral.ai"
     )
 
-# URL de ton serveur MCP déployé sur Render
+# URL du serveur MCP distant sur Render
 MCP_SERVER_URL = "https://mcp-flight-agent-jpof.onrender.com/sse"
 
-# Initialisation de l'historique
+# Initialisation de l'historique de discussion
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Affichage du fil de discussion
+# Affichage des messages enregistrés
 for msg in st.session_state.messages:
     if isinstance(msg, dict) and "role" in msg:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-# 3. Champ de saisie utilisateur
+# 3. Traitement de la saisie utilisateur
 if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
     if not MISTRAL_API_KEY:
         st.error("Veuillez renseigner ta clé API Mistral pour continuer.")
@@ -48,7 +59,7 @@ if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
             async with ClientSession(streams[0], streams[1]) as session:
                 await session.initialize()
 
-                # Découverte automatique des outils MCP
+                # Découverte dynamique des outils MCP
                 mcp_tools = await session.list_tools()
                 tools_for_mistral = [
                     {
@@ -62,7 +73,7 @@ if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
                     for tool in mcp_tools.tools
                 ]
 
-                # Premier appel à Mistral pour déterminer si un outil doit être exécuté
+                # Premier appel à Mistral avec accès aux outils
                 response = client.chat.complete(
                     model="mistral-large-latest",
                     messages=st.session_state.messages,
@@ -71,7 +82,7 @@ if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
 
                 message = response.choices[0].message
 
-                # Si Mistral demande d'exécuter un outil MCP
+                # Si Mistral demande l'exécution d'un outil MCP
                 if message.tool_calls:
                     st.session_state.messages.append(
                         {
@@ -83,7 +94,7 @@ if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
 
                     for tool_call in message.tool_calls:
                         args = json.loads(tool_call.function.arguments)
-                        # Exécution de l'outil sur le serveur MCP
+                        # Exécution de l'outil sur le serveur MCP distant
                         result = await session.call_tool(
                             tool_call.function.name, args
                         )
@@ -97,7 +108,7 @@ if user_prompt := st.chat_input("Ex: Quel temps fait-il à Rome ?"):
                             }
                         )
 
-                    # Second appel à Mistral avec les résultats de l'outil
+                    # Second appel à Mistral avec les retours de l'outil
                     final_response = client.chat.complete(
                         model="mistral-large-latest",
                         messages=st.session_state.messages,
