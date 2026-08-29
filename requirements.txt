@@ -1,7 +1,7 @@
-mcp>=1.0.0
+mcp
 requests
 uvicorn
 starlette
 streamlit
-mistralai>=1.0.0
+mistralai
 qrcode
