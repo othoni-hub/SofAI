@@ -1,0 +1,7 @@
+mcp
+requests
+uvicorn
+starlette
+streamlit
+mistralai
+qrcode
